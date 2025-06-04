@@ -1,0 +1,6 @@
+run_id,timestamp,horizonte,fleet_size,LeaseCost,BuyCost,runtime_s,total_cost,num_extra,file_plane,file_weekly,notes
+run001,2025-06-03_21-44-55,29,30,70000,15000000,2.01,280000.0,3,run001_plane_weekly_status_T29.csv,run001_weekly_report_T29.csv,
+run002,2025-06-03_21-51-35,29,30,70000,1300000,2.07,2420000.0,3,reports/run002_plane_weekly_status_T29.csv,reports/run002_weekly_report_T29.csv,
+run003,2025-06-03_21-52-37,29,30,70000,1300000,2.1,2420000.0,3,reports/run003_plane_weekly_status_T29.csv,reports/run003_weekly_report_T29.csv,
+run004,2025-06-03_21-59-46,30,30,70000,1300000,4.02,2490000.0,3,reports/run004_plane_weekly_status_T30.csv,reports/run004_weekly_report_T30.csv,
+run005,2025-06-03_22-05-15,54,30,70000,1300000,261.49,2600000.0,3,reports/run005_plane_weekly_status_T54.csv,reports/run005_weekly_report_T54.csv,
