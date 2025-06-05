@@ -62,7 +62,17 @@ def write_reports(model, params, timestamp, runtime_s, run_id):
 
     for t in T:
         for p in P_WB:
-            motor = next((i for i in I_WB if a[i, p, t].X > 0.5), None)
+            motor = None
+            # Si i ≤ n_aviones, revisa solo i=p
+            if (p, p, t) in a and a[(p, p, t)].X > 0.5:
+                motor = p
+            else:
+                # revisa motores extra
+                for i in I_extra:
+                    if a[(i, p, t)].X > 0.5:
+                        motor = i
+                        break
+
             cycles = y[motor, t].X if motor is not None else 0
             # Redondear ciclos acumulados a dos decimales
             cycles = round(cycles, 2)

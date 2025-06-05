@@ -5,40 +5,36 @@ def warm_start(model, params):
     Aplica una heurística voraz (greedy) para asignar motores propios antes de optimizar.
     Recibe:
       - model: el objeto Gurobi Model ya construido.
-      - params: diccionario con datos (y0, c, C, P_WB, T) y con las variables en params['model_components'].
+      - params: diccionario con datos y las variables en params['model_components'].
     Deja en `.Start` de cada variable la solución inicial para que Gurobi la use como warm‐start.
     """
 
-    # 1) Extraer directamente las variables binarias del modelo
+    # 1) Extraer las variables binarias del modelo
     a         = params['model_components']['a']
     ell       = params['model_components']['ell']
     buy_extra = params['model_components']['buy_extra']
 
     # 2) Datos para la heurística
-    cycles_greedy = params['y0'].copy()  # copia de ciclos iniciales para simular rotación
+    cycles_greedy = params['y0'].copy()
     P_WB          = params['P_WB']
+    I_WB          = params['I_WB']
+    I_extra       = params['I_extra']
     c             = params['c']
     C             = params['C']
     T             = params['T']
 
-    # 3) Resetear valores Start de todas las variables binarias
+    # 3) Resetear todos los valores Start de variables binarias
     for var in list(a.values()) + list(ell.values()) + list(buy_extra.values()):
         var.Start = 0
 
-    # 4) Heurística voraz: asignar motores propios si tienen capacidad de ciclos
+    # 4) Heurística voraz: para cada semana t, cada avión p
     for t in T:
         for p in P_WB:
-            elegido = None
-            # Recorremos motores propios (IDs 1…n_aviones)
-            for i in range(1, len(P_WB) + 1):
-                if cycles_greedy[i] + c[p] <= C[i]:
-                    elegido = i
-                    break
-
-            if elegido:
-                # Asignar motor propio i al avión p en semana t
-                a[elegido, p, t].Start = 1
-                cycles_greedy[elegido] += c[p]
+            # Intentar usar el motor propio p
+            if cycles_greedy[p] + c[p] <= C[p]:
+                # Existe a[(p, p, t)] en el diccionario
+                a[(p, p, t)].Start = 1
+                cycles_greedy[p] += c[p]
             else:
-                # Si no hay motor propio con capacidad, arrendamos
+                # No cabe el propio; arrendar
                 ell[p, t].Start = 1

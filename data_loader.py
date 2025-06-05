@@ -33,7 +33,7 @@ def load_data(data_path='Datos/'):
     # Conjuntos de IDs
     I_extra = list(range(n_aviones + 1, n_aviones + n_extra + 1))
     I_WB = list(range(1, n_aviones + 1)) + I_extra
-    T = list(range(1, 55))  # 54 semanas
+    T = list(range(1, 131))  # 130 semanas
 
     # Mapeos matricula ↔ id
     mat2id = dict(zip(df_status_wb['matricula'], df_status_wb['id']))

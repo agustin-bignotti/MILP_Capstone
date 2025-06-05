@@ -24,126 +24,142 @@ def build_model(params):
     M_max = params['M_max']       # Máximo motores que pueden entrar a mant. por semana
     M = params['M']               # Ciclo máximo estricto para motores propios (no extras)
     n_aviones = len(P_WB)         # Cantidad de motores “propios” (IDs 1…n_aviones)
-    bigM      = M                 # BigM, ya calculado en data_loader como max(C.values())
+    # bigM      = M                 # BigM, ya calculado en data_loader como max(C.values())
 
 
     # ─── (3) INSTANCIAR MODELO Y VARIABLES ────────────────────────────────────────
     model = Model("WB_Maintenance")
-    model.Params.OutputFlag = 1   # 1 para ver salida, 0 para silenciar
+    model.Params.OutputFlag = 1
 
-    # 3.1. Variables de asignación y stock
-    # a[i,p,t] = 1 si el motor i está instalado en el avión p en la semana t
-    a = model.addVars(I_WB, P_WB, T, vtype=GRB.BINARY, name="a")
-    # s[i,t] = 1 si el motor i está en stock al inicio de la semana t
+    # 3.1. Variables de asignación y stock (versión reducida)
+    #  (a.1) Motores propios: solo (i,i,t)
+    a_prop = model.addVars(
+        [(i, i, t) for i in range(1, n_aviones + 1) for t in T],
+        vtype=GRB.BINARY,
+        name="a_prop"
+    )
+
+    #  (a.2) Motores extras: todos (i,p,t) con i en I_extra
+    a_extra = model.addVars(
+        [(i, p, t) for i in I_extra for p in P_WB for t in T],
+        vtype=GRB.BINARY,
+        name="a_extra"
+    )
+
+    # Unificar a_prop y a_extra en un solo dict "a"
+    a = {}
+    for i in range(1, n_aviones + 1):
+        for t in T:
+            a[(i, i, t)] = a_prop[i, i, t]
+    for i in I_extra:
+        for p in P_WB:
+            for t in T:
+                a[(i, p, t)] = a_extra[i, p, t]
+
+    # 3.1 (continuación) Stock binario de motores
     s = model.addVars(I_WB, T, vtype=GRB.BINARY, name="s")
 
     # 3.2. Variables de mantenimiento
-    # m[i,t] = 1 si el motor i inicia mantenimiento en la semana t
     m = model.addVars(I_WB, T, vtype=GRB.BINARY, name="m")
-    # r[i,t] = 1 si el motor i está en mantenimiento en la semana t
     r = model.addVars(I_WB, T, vtype=GRB.BINARY, name="r")
 
     # 3.3. Variables de ciclos e inventario agregado
-    # y[i,t] = ciclos acumulados por el motor i al cierre de la semana t
     y = model.addVars(I_WB, T, vtype=GRB.CONTINUOUS, lb=0, name="y")
-    # S[t] = inventario agregado de repuestos al inicio de la semana t
     S = model.addVars(T, vtype=GRB.CONTINUOUS, lb=0, name="S")
 
-    # 3.4. Variables de cobertura con arrendo o compra
-    # ell[p,t] = 1 si el avión p opera con motor arrendado en la semana t
+    # 3.4. Cobertura con arrendo
     ell = model.addVars(P_WB, T, vtype=GRB.BINARY, name="ell")
 
-    # 3.5. Variable binaria: buy_extra[i,t] = 1 si compramos el motor extra i en la semana t
+    # 3.5. Compra de motores extra
     buy_extra = model.addVars(I_extra, T, vtype=GRB.BINARY, name="buy_extra")
 
-    # 3.6. Variables auxiliares para acumulación de compras de motores extra
-    # buy_cum[i,t] = compras acumuladas del motor extra i hasta la semana t
+    # 3.6. Compras acumuladas de motores extra
     buy_cum = {}
     for i in I_extra:
         for t in T:
             buy_cum[i, t] = quicksum(buy_extra[i, tau] for tau in range(1, t+1))
 
 
+
     # ─── (4) RESTRICCIONES ──────────────────────────────────────────────────────────
 
-    # 4.0 Asignación inicial en t=1
+    # 4.0  Asignación inicial en t=1
     for i in I_WB:
         if i <= n_aviones:
-            # Si i es motor propio (1…n_aviones), obligo a que en t=1 esté en avión i
-            model.addConstr(a[i, i, 1] == 1, name=f"init_assign_{i}_{i}")
+            # Motor propio i → necesariamente va al avión i en la semana 1
+            model.addConstr(a[(i, i, 1)] == 1, name=f"init_assign_{i}_{i}")
             model.addConstr(r[i, 1] == 0, name=f"init_no_maint_{i}")
             model.addConstr(s[i, 1] == 0, name=f"init_no_stock_{i}")
-            for p in P_WB:
-                if p != i:
-                    model.addConstr(a[i, p, 1] == 0, name=f"init_noassign_{i}_{p}")
+            # NO es necesario restringir a[(i,p,1)] = 0 para p≠i, pues esas claves ya no existen
         else:
-            # Si i es motor extra (i > n_aviones), entonces en t=1:
+            # Motores extra: ninguno asignado en t=1
             for p in P_WB:
-                model.addConstr(a[i, p, 1] == 0, name=f"extra_noassign_{i}_{p}")
+                # Aquí sí existen (i,p,1) para i∈I_extra, así que fijamos a[(i,p,1)] = 0
+                model.addConstr(a[(i, p, 1)] == 0, name=f"extra_noassign_{i}_{p}")
             model.addConstr(r[i, 1] == 0, name=f"extra_no_maint_{i}")
             model.addConstr(s[i, 1] == 0, name=f"extra_no_stock_{i}")
 
-    # 4.1 Estados de cada motor en cada semana
+    # 4.1  Estados de cada motor en cada semana
     for i in I_WB:
         for t in T:
             if i in I_extra:
-                # Para motores extras: hasta que no lo compro sum(a + r + s) = 0; luego = 1
+                # Sumar solo sobre (i,p,t) que existen en el dict a
+                assign_sum = quicksum(a[(i, p, t)] for p in P_WB if (i, p, t) in a)
                 model.addConstr(
-                    quicksum(a[i, p, t] for p in P_WB) + r[i, t] + s[i, t]
-                    == buy_cum[i, t],
+                    assign_sum + r[i, t] + s[i, t] == buy_cum[i, t],
                     name=f"exclusive_extra_{i}_{t}"
                 )
             else:
-                # Para motores propios: siempre en exactamente un estado (asignado, en mantención o en stock)
+                # Motor propio i: solo existe a[(i,i,t)]
                 model.addConstr(
-                    quicksum(a[i, p, t] for p in P_WB) + r[i, t] + s[i, t] == 1,
+                    a[(i, i, t)] + r[i, t] + s[i, t] == 1,
                     name=f"exclusive_init_{i}_{t}"
                 )
 
-    # 4.2 Cobertura: cada avión p en t usa o bien un motor (propio o extra) o bien arrienda
+    # 4.2 Cobertura semanal por avión
     for p in P_WB:
         for t in T:
+            assign_sum = quicksum(a[(i, p, t)] for i in I_WB if (i, p, t) in a)
             model.addConstr(
-                quicksum(a[i, p, t] for i in I_WB) + ell[p, t] == 1,
+                assign_sum + ell[p, t] == 1,
                 name=f"coverage_{p}_{t}"
             )
 
-    # 4.3 Duración del mantenimiento: si m[i,t'] = 1 inicié mantención, entonces r[i,t] = 1 para t' ≤ t ≤ t'+d-1
+    # 4.3 Duración del mantenimiento (sin cambios)
     for i in I_WB:
         for t in T:
             model.addConstr(
                 r[i, t] == quicksum(
-                    m[i, tau] for tau in range(max(1, t-d+1), t+1)
+                    m[i, tau]
+                    for tau in range(max(1, t - d + 1), t + 1)
                 ),
                 name=f"maint_duration_{i}_{t}"
             )
 
-    # 4.4 Acumulación de ciclos con reset cuando termina mantención (versión simplificada)
+    # 4.4 Acumulación de ciclos con reset
     for i in I_WB:
-        # Semana 1: ciclos iniciales + los que gana si está asignado
+        # Semana 1
         model.addConstr(
-            y[i, 1] == y0[i] + quicksum(c[p] * a[i, p, 1] for p in P_WB),
+            y[i, 1] == y0[i]
+                     + quicksum(c[p] * a[(i, p, 1)] for p in P_WB if (i, p, 1) in a),
             name=f"init_cycles_{i}"
         )
-        # Semanas t = 2…última
+        # Semanas 2…última
         for t in T[1:]:
-            expr = quicksum(c[p] * a[i, p, t] for p in P_WB)
+            expr = quicksum(c[p] * a[(i, p, t)] for p in P_WB if (i, p, t) in a)
             if t <= d:
-                # Para t ≤ d no puede haber terminado ninguna mantención previa
                 model.addConstr(
                     y[i, t] == y[i, t-1] + expr,
                     name=f"cycles_accum_{i}_{t}"
                 )
             else:
-                # Para t > d, chequeamos si m[i,t-d] = 1 (termina mantención hoy)
                 model.addConstr(
-                    y[i, t] == (1 - m[i, t-d]) * (y[i, t-1] + expr)
-                                + m[i, t-d] * expr,
+                    y[i, t] == (1 - m[i, t - d]) * (y[i, t-1] + expr)
+                                + m[i, t - d] * expr,
                     name=f"cycles_reset_exact_{i}_{t}"
                 )
 
-
-    # 4.5 Límite estricto de ciclos tras mantención
+    # 4.5 Límite estricto de ciclos tras mantención (sin cambios)
     for i in I_WB:
         for t in T:
             model.addConstr(
@@ -151,38 +167,44 @@ def build_model(params):
                 name=f"cycle_limit_strict_{i}_{t}"
             )
 
-    # 4.6 Capacidad: a lo sumo M_max inicios de mantención cada semana
+    # 4.6 Capacidad de mantención
     for t in T:
         model.addConstr(
             quicksum(m[i, t] for i in I_WB) <= M_max,
             name=f"capacity_{t}"
         )
 
-    # 4.7 Flujo de inventario de repuestos (stock)
-    # Semana 1: stock inicial S[1] = S0 + compras en t=1
+    # 4.7 Flujo de inventario (sin cambios)
     model.addConstr(
         S[1] == S0 + quicksum(buy_extra[i, 1] for i in I_extra),
         name="stock_init"
     )
-    # Semanas t=2…: stock[t] = stock[t-1] + compras[t] + retornos mant[t]
     for t in T[1:]:
         model.addConstr(
             S[t] == S[t-1]
-                      + quicksum(buy_extra[i, t] for i in I_extra)
-                      + quicksum(m[i, t-d] for i in I_WB if t-d > 0),
+                   + quicksum(buy_extra[i, t] for i in I_extra)
+                   + quicksum(m[i, t - d] for i in I_WB if t - d > 0),
             name=f"stock_flow_{t}"
         )
 
-    # 4.8: Continuidad de asignación: si motor i estaba en avión p en t-1 y no entró a mantención en t, entonces en t debe seguir ahí
+    # 4.8 Continuidad de asignación
     for i in I_WB:
-        for p in P_WB:
+        if i <= n_aviones:
             for t in T[1:]:
                 model.addConstr(
-                    a[i, p, t] >= a[i, p, t-1] - m[i, t],
-                    name=f"continuity_{i}_{p}_{t}"
+                    a[(i, i, t)] >= a[(i, i, t-1)] - m[i, t],
+                    name=f"continuity_{i}_{i}_{t}"
                 )
+        else:
+            for p in P_WB:
+                for t in T[1:]:
+                    if (i, p, t) in a and (i, p, t-1) in a:
+                        model.addConstr(
+                            a[(i, p, t)] >= a[(i, p, t-1)] - m[i, t],
+                            name=f"continuity_{i}_{p}_{t}"
+                        )
 
-    # 4.9 Solo puede estar en stock si ya se compró (motores extra)
+    # 4.9 Solo stock si compró antes (para extras)
     for i in I_extra:
         for t in T:
             model.addConstr(
@@ -190,20 +212,22 @@ def build_model(params):
                 name=f"no_stock_before_buy_{i}_{t}"
             )
 
-    # 4.10 Solo asignar motor extra si ya está comprado
+    # 4.10 Solo asignar extra si ya está comprado
     for i in I_extra:
         for p in P_WB:
             for t in T:
-                model.addConstr(
-                    a[i, p, t] <= buy_cum[i, t],
-                    name=f"assign_only_if_bought_{i}_{p}_{t}"
-                )
+                if (i, p, t) in a:
+                    model.addConstr(
+                        a[(i, p, t)] <= buy_cum[i, t],
+                        name=f"assign_only_if_bought_{i}_{p}_{t}"
+                    )
 
-    # 4.11 Si compro motor extra i en la semana t, forzosamente se debe usar en t
+    # 4.11 Si compro motor extra i en t, debe usarse en t
     for i in I_extra:
         for t in T:
+            assign_sum = quicksum(a[(i, p, t)] for p in P_WB if (i, p, t) in a)
             model.addConstr(
-                quicksum(a[i, p, t] for p in P_WB) >= buy_extra[i, t],
+                assign_sum >= buy_extra[i, t],
                 name=f"use_bought_engine_{i}_{t}"
             )
 
@@ -214,34 +238,42 @@ def build_model(params):
             name=f"max_one_purchase_extra_{i}"
         )
 
-    # 4.13 HEURÍSTICA en semanas impares (t = 3,5,7,…)
-    # (= reproducir exactamente tu bloque original, T[1:] arranca en t=2)
+    # 4.13 Heurística en semanas impares (sin cambios en lógica)
     for t in T[1:]:
         if t % 2 != 0:
-            # 1) No iniciar mantención
             for i in I_WB:
                 model.addConstr(m[i, t] == 0, name=f"no_maint_odd_{i}_{t}")
-            # 2) No comprar motores extra
             for i in I_extra:
                 model.addConstr(buy_extra[i, t] == 0, name=f"no_buy_odd_{i}_{t}")
-            # 3) No cambiar arrendamiento: ell[p,t] == ell[p,t-1]
             for p in P_WB:
                 model.addConstr(ell[p, t] == ell[p, t-1], name=f"lease_const_odd_{p}_{t}")
-            # 4) No cambiar asignación: a[i,p,t] == a[i,p,t-1]
             for i in I_WB:
-                for p in P_WB:
-                    model.addConstr(a[i, p, t] == a[i, p, t-1], name=f"assign_const_odd_{i}_{p}_{t}")
-            # 5) No cambiar stock: s[i,t] == s[i,t-1]
+                if i <= n_aviones:
+                    for p in [i]:  # motor propio solo va en su avión
+                        model.addConstr(
+                            a[(i, p, t)] == a[(i, p, t-1)],
+                            name=f"assign_const_odd_{i}_{p}_{t}"
+                        )
+                else:
+                    for p in P_WB:
+                        if (i, p, t) in a and (i, p, t-1) in a:
+                            model.addConstr(
+                                a[(i, p, t)] == a[(i, p, t-1)],
+                                name=f"assign_const_odd_{i}_{p}_{t}"
+                            )
             for i in I_WB:
                 model.addConstr(s[i, t] == s[i, t-1], name=f"stock_const_odd_{i}_{t}")
 
-    # 4.14 Ciclo máximo estricto en todas las semanas (para implementar heurística en pares)
+    # 4.14 Ciclo máximo estricto en todas las semanas (sin cambios)
     for i in I_WB:
         for t in T:
             model.addConstr(
                 y[i, t] <= C[i],
                 name=f"cycle_limit_strict_no_over_{i}_{t}"
             )
+
+
+
 
     # ─── (5) FUNCIÓN OBJETIVO ────────────────────────────────────────────────────────
     model.setObjective(

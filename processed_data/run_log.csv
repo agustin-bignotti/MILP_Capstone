@@ -4,3 +4,8 @@ run002,2025-06-03_21-51-35,29,30,70000,1300000,2.07,2420000.0,3,reports/run002_p
 run003,2025-06-03_21-52-37,29,30,70000,1300000,2.1,2420000.0,3,reports/run003_plane_weekly_status_T29.csv,reports/run003_weekly_report_T29.csv,
 run004,2025-06-03_21-59-46,30,30,70000,1300000,4.02,2490000.0,3,reports/run004_plane_weekly_status_T30.csv,reports/run004_weekly_report_T30.csv,
 run005,2025-06-03_22-05-15,54,30,70000,1300000,261.49,2600000.0,3,reports/run005_plane_weekly_status_T54.csv,reports/run005_weekly_report_T54.csv,
+run008,2025-06-03_22-39-07,30,30,70000,1300000,1.55,2940000.0,3,reports/run008_plane_weekly_status_T30.csv,reports/run008_weekly_report_T30.csv,
+run009,2025-06-03_22-40-26,99,30,70000,15000000,27.96,8260000.0,3,reports/run009_plane_weekly_status_T99.csv,reports/run009_weekly_report_T99.csv,
+run011,2025-06-04_15-00-35,260,30,70000,15000000,70.24,529900000.0,3,reports/run011_plane_weekly_status_T260.csv,reports/run011_weekly_report_T260.csv,
+run012,2025-06-04_15-02-08,130,30,70000,15000000,21.79,10010000.0,3,reports/run012_plane_weekly_status_T130.csv,reports/run012_weekly_report_T130.csv,
+run013,2025-06-04_15-03-09,130,30,70000,1500000,606.36,4959999.999996853,3,reports/run013_plane_weekly_status_T130.csv,reports/run013_weekly_report_T130.csv,
