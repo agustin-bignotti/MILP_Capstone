@@ -99,6 +99,7 @@ def write_reports(model, params, timestamp, runtime_s, run_id):
                 'Umbral_maximo':     threshold,
                 'Leased':            lease_tag,
                 'Bought':            bought,
+                'Costo_compra_real': params['buy_cost_by_week'][t] if motor in I_extra and buy_extra[motor, t].X > 0.5 else '',
                 'OverThreshold':     over
             })
 
@@ -113,7 +114,7 @@ def write_reports(model, params, timestamp, runtime_s, run_id):
     for t in T:
         cum_cost += (
             sum(LeaseCost * ell[p, t].X for p in P_WB)
-            + sum(BuyCost * buy_extra[i, t].X for i in I_extra)
+            + sum(params['buy_cost_by_week'][t] * buy_extra[i, t].X for i in I_extra)
         )
 
         n_mant  = sum(int(r[i, t].X > 0.5) for i in I_WB)

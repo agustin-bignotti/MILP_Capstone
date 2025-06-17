@@ -277,9 +277,8 @@ def build_model(params):
 
     # ─── (5) FUNCIÓN OBJETIVO ────────────────────────────────────────────────────────
     model.setObjective(
-        # 5.1 Costo total = arrendos + compras
         quicksum(LeaseCost * ell[p, t] for p in P_WB for t in T)
-        + quicksum(BuyCost * buy_extra[i, t] for i in I_extra for t in T),
+        + quicksum(params['buy_cost_by_week'][t] * buy_extra[i, t] for i in I_extra for t in T),
         GRB.MINIMIZE
     )
 

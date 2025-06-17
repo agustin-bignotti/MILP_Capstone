@@ -4,7 +4,6 @@ import os
 import sys
 
 def load_data(data_path='Datos/'):
-
     # Normaliza data_path para que no acabe (o empiece) con slash redundante:
     data_path = data_path.rstrip('/')
 
@@ -22,7 +21,6 @@ def load_data(data_path='Datos/'):
 
     # 1. Cargar CSV de flota wide‐body
     df_status_wb = pd.read_csv(f'{data_path}/Fleet_status_WB.csv')
-    # Asignar IDs secuenciales según línea de archivo (1…n)
     df_status_wb.insert(0, 'id', range(1, len(df_status_wb) + 1))
 
     # Motores para Comprar
@@ -33,13 +31,13 @@ def load_data(data_path='Datos/'):
     # Conjuntos de IDs
     I_extra = list(range(n_aviones + 1, n_aviones + n_extra + 1))
     I_WB = list(range(1, n_aviones + 1)) + I_extra
-    T = list(range(1, 131))  # 130 semanas
+    T = list(range(1, 141))  # 140 semanas
 
-    # Mapeos matricula ↔ id
+    # Mapeos matrícula ↔ id
     mat2id = dict(zip(df_status_wb['matricula'], df_status_wb['id']))
     id2mat = {i: m for m, i in mat2id.items()}
     for i in I_extra:
-        id2mat[i] = f"EXTRA_{i}"  
+        id2mat[i] = f"EXTRA_{i}"
 
     # Leer ciclos diarios y convertir a semanales
     df_cycles_wb = pd.read_csv(f'{data_path}/Operations_cycles_WB.csv')
@@ -86,36 +84,52 @@ def load_data(data_path='Datos/'):
             raise KeyError(f"No umbral para operación '{row['Operation']}'")
         C[row['id']] = C_f[fam]
 
-    # Parámetros económicos y constantes
+    # Parámetros económicos
     df_motor_info = pd.read_csv(f'{data_path}/Motor_info.csv')
-    LeaseCost = int(df_motor_info.loc[df_motor_info['Action']=='Lease for week','Price'].iloc[0])
-    BuyCost   = int(df_motor_info.loc[df_motor_info['Action']=='Buy','Price'].iloc[0])
+    LeaseCost = int(df_motor_info.loc[df_motor_info['Action'] == 'Lease for week', 'Price'].iloc[0])
+    BuyCost   = int(df_motor_info.loc[df_motor_info['Action'] == 'Buy', 'Price'].iloc[0])
     d         = 18
     S0        = 0
     M_max     = 5
     M         = max(C.values())
 
-    # Extender parametros para los motores extras
     for i in I_extra:
         y0[i] = 0
         C[i] = M
 
+    # ───── LÓGICA DE DEPRECIACIÓN SEGÚN HORIZONTE DE 140 SEMANAS ─────────────
+    SEMANAS_PLANIFICAR = 260
+    COSTO_ARRIENDO_SEMANAL = 70000
+    COSTO_COMPRA_MOTOR = 15000000
+    VALOR_INICIAL_MOTOR = COSTO_COMPRA_MOTOR
+    VALOR_RESIDUAL_PORCENTAJE = 0.05
+    ANIOS_DEPRECIACION = 20
+    SEMANAS_DEPRECIACION = ANIOS_DEPRECIACION * 52  
+    VALOR_RESIDUAL = VALOR_INICIAL_MOTOR * VALOR_RESIDUAL_PORCENTAJE
+    DEPRECIACION_SEMANAL = (VALOR_INICIAL_MOTOR - VALOR_RESIDUAL) / SEMANAS_DEPRECIACION
+
+    buy_cost_by_week = {
+        t: round((VALOR_INICIAL_MOTOR - DEPRECIACION_SEMANAL * t) - 
+                 (VALOR_INICIAL_MOTOR - DEPRECIACION_SEMANAL * SEMANAS_PLANIFICAR))
+        for t in T
+    }
+
     print("✅ Datos cargados.")
 
     params = {
-        # DataFrames (si más adelante los necesitas para debug o para reportes extra)
+        # DataFrames
         "df_status_wb": df_status_wb,
         "df_cycles_wb": df_cycles_wb,
         "df_max_wb": df_max_wb,
         "df_motor_info": df_motor_info,
 
-        # Conjuntos y listas
+        # Conjuntos
         "P_WB": P_WB,
         "I_WB": I_WB,
         "I_extra": I_extra,
         "T": T,
 
-        # Mapeos y diccionarios
+        # Diccionarios
         "mat2id": mat2id,
         "id2mat": id2mat,
         "c": c,
@@ -125,6 +139,7 @@ def load_data(data_path='Datos/'):
         # Parámetros económicos
         "LeaseCost": LeaseCost,
         "BuyCost": BuyCost,
+        "buy_cost_by_week": buy_cost_by_week,
         "d": d,
         "S0": S0,
         "M_max": M_max,
